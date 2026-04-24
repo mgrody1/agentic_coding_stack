@@ -1,40 +1,75 @@
-# Frontier Dev Codex Bundle
+# Agentic Coding Stack (Frontier Dev)
 
-This bundle is a low-knob, Codex-ready handoff for building a local-first multi-Mac development system on top of oMLX.
+Local-first multi-Mac orchestration scaffold built milestone-by-milestone.
 
-## What this bundle contains
+## Current implementation status
 
-- `01-architecture.md` — system topology and hard boundaries
-- `02-memory-model.md` — global vs localized memory, frontier memory, residual memory
-- `03-implementation-spec.md` — the full implementation spec
-- `04-api-contracts.md` — conductor and worker API contracts
-- `05-codex-handoff-prompt.md` — a direct prompt to give Codex
-- `06-build-order-and-acceptance.md` — exact milestone sequence and acceptance criteria
-- `07-config-examples.md` — example `.codex/config.toml`, `AGENTS.md`, and service config
-- `08-schema-examples.md` — CandidatePlan, FeasibilityCertificate, and memory records
+Implemented and stabilized:
+- **Milestone 1**: shared schemas/config, conductor and worker FastAPI skeletons, SQLite models/bootstrap, oMLX/worker wrappers, health endpoints.
+- **Milestone 2**: decision-state assembly and retrieval pipeline (SQLite FTS lexical + oMLX embedding + oMLX rerank).
+- **Milestone 3**: fixed-role candidate generation (6 builder roles), schema validation, feasibility certificates and gating.
+- **Milestone 4**: frontier pruning (Pareto non-dominated, dedupe, Gram similarity, medoids `k<=3`), arbiter decision contract, synthesis recertification.
+- **Milestone 5**: execution/review loop for one selected candidate with explicit stage machine, one repair cycle max, and structured artifact capture.
+- **Milestone 6**: draft PR payload composition and deterministic memory writes for chosen/frontier/residual records with rule-based surprise detection.
 
-## Design stance
+Not implemented yet:
+- **Milestone 7+** localized alias/pair overlays and overlay-aware retrieval/prompting.
 
-This system is intentionally:
-- deterministic around probabilistic models
-- low-knob
-- frontier-based rather than swarm-based
-- safe by default: draft PRs, no auto-merge
-- structured in memory rather than transcript-heavy
+## Architecture boundaries
 
-## V1 boundaries
+- oMLX is runtime/model serving only.
+- Conductor owns orchestration, memory retrieval/writes, frontier selection, and arbiter coordination.
+- Workers execute repo/file/command/git actions only (policy-free).
+- Objective vectors remain vector-valued (no weighted scalar collapse).
+- No SSH dependency.
 
-Do not implement in v1:
-- auto-merge to `main`
-- SSH-dependent execution
-- learned planning metrics
-- full Fisher pullback geometry
-- arbitrary tuning dashboards
-- vector DB dependencies unless SQLite retrieval is clearly too small
+## Services
 
-## Operational shape
+### Conductor (`apps/conductor/main.py`)
+- `GET /health`
+- `POST /jobs`
+- `GET /jobs/{id}`
+- `POST /jobs/{id}/execute`
+- `GET /jobs/{id}/execution-state`
+- `POST /jobs/{id}/package`
+- `POST /decision-state/build`
+- `POST /memory/query`
+- `POST /memory/ingest`
+- `POST /candidates/generate`
+- `POST /frontier/build`
+- `POST /arbiter/decide`
 
-- oMLX = inference/runtime only
-- Conductor = planner, memory, orchestration, PR flow
-- Workers = local git + test execution only
-- Human = final approver
+### Worker (`apps/worker/main.py`)
+- `GET /health`
+- `POST /repo/prepare`
+- `POST /repo/reset`
+- `POST /artifact/read_file`
+- `POST /artifact/write_file`
+- `POST /run/command`
+- `POST /run/lint`
+- `POST /run/typecheck`
+- `POST /run/tests`
+- `POST /git/diff`
+- `POST /git/commit`
+- `POST /git/push`
+
+## Security and safety currently enforced
+
+- Bearer auth required for all conductor and worker endpoints.
+- Worker repo allowlist enforcement.
+- Worker command allowlist enforcement.
+- Worker path traversal protection for file read/write.
+
+## Development notes
+
+Environment variables (key examples):
+- `FRONTIER_API_TOKEN`
+- `FRONTIER_WORKER_TOKEN`
+- `FRONTIER_DB_URL`
+- `FRONTIER_ALLOWED_REPOS`
+- `FRONTIER_ALLOWED_COMMANDS_JSON`
+- `FRONTIER_OMLX_*_URL`
+
+## Tests
+
+Tests are under `tests/` and cover schema/config, client wrappers, health/auth checks, candidate/feasibility/frontier/arbiter behavior, retrieval ingestion, and worker safety rejections.

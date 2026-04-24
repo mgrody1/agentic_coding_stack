@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -58,3 +61,32 @@ class WorkerSettings(BaseSettings):
     worker_token: str = Field(default="replace_me")
     allowed_repos: str = Field(default="/tmp")
     allowed_commands_json: str = Field(default="")
+
+    def allowed_repos_list(self) -> list[str]:
+        return [path.strip() for path in self.allowed_repos.split(",") if path.strip()]
+
+    def command_allowlist(self) -> dict[str, list[str]]:
+        if not self.allowed_commands_json:
+            return {
+                "lint": ["echo", "lint"],
+                "typecheck": ["echo", "typecheck"],
+                "test": ["echo", "test"],
+            }
+
+        path = Path(self.allowed_commands_json)
+        if not path.exists():
+            return {}
+
+        try:
+            loaded = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            return {}
+
+        if not isinstance(loaded, dict):
+            return {}
+
+        clean: dict[str, list[str]] = {}
+        for key, value in loaded.items():
+            if isinstance(key, str) and isinstance(value, list) and all(isinstance(v, str) for v in value):
+                clean[key] = value
+        return clean

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from shared.schemas.models import CandidatePlan, DecisionState
+from shared.utils.parsing import parse_model_json_content
 
 
 BUILDER_ROLES: tuple[str, ...] = (
@@ -73,9 +74,6 @@ class CandidateGenerationService:
     def _extract_candidate_payload(response: dict, role: str) -> dict:
         # Supports OpenAI-compatible chat payload shape.
         content = response.get("choices", [{}])[0].get("message", {}).get("content")
-        if isinstance(content, dict):
-            payload = content
-        else:
-            payload = {}
+        payload = parse_model_json_content(content)
         payload.setdefault("role", role)
         return payload

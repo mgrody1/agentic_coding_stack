@@ -1,3 +1,5 @@
+import json
+
 from apps.conductor.services.arbiter import ArbiterService
 from apps.conductor.services.feasibility import FeasibilityService
 from shared.schemas.models import CandidatePlan, DecisionState, MicroTargets, ObjectiveVector
@@ -65,3 +67,17 @@ def test_arbiter_synthesis_must_be_revalidated_before_acceptance():
 
     assert outcome.status == "rejected"
     assert any("synthesis_recertification_failed" in note for note in outcome.notes)
+
+
+def test_arbiter_parses_json_string_content():
+    response_obj = {"decision_type": "choose", "selected_index": 0}
+    client = CaptureArbiterClient(response_content=json.dumps(response_obj))
+    service = ArbiterService(client, FeasibilityService())
+
+    outcome = service.decide(
+        decision_state=DecisionState(repo="repo", task_id="1", issue_summary="sum"),
+        frontier_candidates=[build_candidate("frontier")],
+        rejected_candidates=[],
+    )
+
+    assert outcome.status == "chosen"

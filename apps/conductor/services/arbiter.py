@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from apps.conductor.services.feasibility import FeasibilityService
 from shared.schemas.models import CandidatePlan, DecisionState
+from shared.utils.parsing import parse_model_json_content
 
 
 @dataclass
@@ -41,8 +42,9 @@ class ArbiterService:
         ]
 
         response = self.omlx_client.chat(alias="arbiter", messages=messages, temperature=0.0)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", {})
-        if not isinstance(content, dict):
+        raw_content = response.get("choices", [{}])[0].get("message", {}).get("content", {})
+        content = parse_model_json_content(raw_content)
+        if not content:
             return ArbiterOutcome(status="rejected", selected_candidate=None, notes=["arbiter_response_invalid"])
 
         decision_type = content.get("decision_type", "reject")

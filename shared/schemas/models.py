@@ -151,6 +151,16 @@ class GitCommitRequest(WorkerRepoRequest):
     message: str
 
 
+
+
+class MemoryIngestRequest(BaseModel):
+    repo: str
+
+
+class MemoryIngestResponse(BaseModel):
+    repo: str
+    ingested_rows: int
+
 class CandidateGenerationRequest(BaseModel):
     decision_state: DecisionState
 
@@ -183,3 +193,65 @@ class ArbiterDecisionResponse(BaseModel):
     status: str
     selected_candidate: CandidatePlan | None = None
     notes: list[str] = Field(default_factory=list)
+
+
+class ReviewerVerdict(BaseModel):
+    verdict: Literal["approve", "block", "revise"]
+    blocking_issues: list[str] = Field(default_factory=list)
+    non_blocking_issues: list[str] = Field(default_factory=list)
+    suggested_repairs: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ExecutionRunRequest(BaseModel):
+    job_id: str
+    repo: str
+    task_id: str
+    base_branch: str = "main"
+    decision_state: DecisionState
+    selected_candidate: CandidatePlan
+
+
+class ExecutionRunResponse(BaseModel):
+    job_id: str
+    stage: str
+    status: str
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    reviewer_verdict: ReviewerVerdict
+    repair_result: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionStateResponse(BaseModel):
+    job_id: str
+    stage: str
+    status: str
+    transitions: list[dict[str, Any]] = Field(default_factory=list)
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionPackageRequest(BaseModel):
+    job_id: str
+    repo: str
+    decision_state: DecisionState
+    chosen_candidate: CandidatePlan
+    feasible_unchosen_candidates: list[CandidatePlan] = Field(default_factory=list)
+    execution_result: ExecutionRunResponse
+
+
+class DraftPRPayloadResponse(BaseModel):
+    title: str
+    body: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryWriteReport(BaseModel):
+    chosen_written: bool
+    frontier_written: int
+    residual_written: bool
+    surprise_reasons: list[str] = Field(default_factory=list)
+
+
+class ExecutionPackageResponse(BaseModel):
+    job_id: str
+    draft_pr: DraftPRPayloadResponse
+    memory_report: MemoryWriteReport

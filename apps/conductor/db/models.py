@@ -22,6 +22,21 @@ class DecisionStateRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class ExecutionStateRecord(Base):
+    __tablename__ = "execution_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    repo: Mapped[str] = mapped_column(String(255), index=True)
+    task_id: Mapped[str] = mapped_column(String(255), index=True)
+    stage: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="queued")
+    selected_candidate: Mapped[dict] = mapped_column(JSON)
+    artifacts: Mapped[dict] = mapped_column(JSON, default=dict)
+    transitions: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class CandidatePlanRecord(Base):
     __tablename__ = "candidate_plan"
 
@@ -39,6 +54,17 @@ class FeasibilityCertificateRecord(Base):
     meso_pass: Mapped[bool] = mapped_column(Boolean)
     micro_pass: Mapped[bool] = mapped_column(Boolean)
     payload: Mapped[dict] = mapped_column(JSON)
+
+
+
+
+class ChosenMemoryRecord(Base):
+    __tablename__ = "chosen_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    repo: Mapped[str] = mapped_column(String(255), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    summary_text: Mapped[str] = mapped_column(Text, default="")
 
 
 class FrontierMemoryRecord(Base):

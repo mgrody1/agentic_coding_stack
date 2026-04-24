@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,7 +57,6 @@ class MemoryRetrievalService:
         query_embedding = self.omlx_client.embed("mem-embed", [query])[0]
         rescored: list[MemoryHit] = []
         for hit in lexical_hits:
-            # Placeholder deterministic similarity with oMLX-provided shape.
             reference = self.omlx_client.embed("mem-embed", [hit.text])[0]
             sim = self._cosine(query_embedding, reference)
             rescored.append(hit.model_copy(update={"score": sim}))
@@ -90,7 +90,8 @@ class MemoryRetrievalService:
         return dot / (l_norm * r_norm)
 
     @staticmethod
-    def ingest_memory_rows(session: Session, rows: list[dict[str, Any]]) -> None:
+    def ingest_memory_rows(session: Session, rows: list[dict[str, Any]]) -> int:
+        count = 0
         for row in rows:
             session.execute(
                 text(
@@ -98,4 +99,58 @@ class MemoryRetrievalService:
                 ),
                 row,
             )
+            count += 1
         session.commit()
+        return count
+
+    def refresh_fts_from_memory_tables(self, session: Session, repo: str) -> int:
+        """Simple ingestion path from structured memory tables into FTS rows."""
+        self.ensure_fts(session)
+        session.execute(text("DELETE FROM memory_fts WHERE json_extract(metadata, '$.repo') = :repo"), {"repo": repo})
+
+        rows: list[dict[str, Any]] = []
+        table_specs = [
+            ("chosen_memory", "summary_text"),
+            ("frontier_memory", "summary_text"),
+            ("residual_memory", "summary_text"),
+            ("outcome_memory", "notes"),
+        ]
+        for table_name, text_col in table_specs:
+            fetched = session.execute(
+                text(f"SELECT id, repo, {text_col} FROM {table_name} WHERE repo = :repo"),
+                {"repo": repo},
+            ).fetchall()
+            for row in fetched:
+                summary = row[2] or ""
+                if not summary.strip():
+                    continue
+                rows.append(
+                    {
+                        "source": table_name,
+                        "record_id": int(row[0]),
+                        "text": summary,
+                        "metadata": json.dumps({"repo": row[1], "table": table_name}),
+                    }
+                )
+
+        decision_rows = session.execute(
+            text("SELECT id, repo, payload FROM decision_state WHERE repo = :repo"),
+            {"repo": repo},
+        ).fetchall()
+        for row in decision_rows:
+            payload = row[2] or {}
+            issue_summary = payload.get("issue_summary") if isinstance(payload, dict) else ""
+            if issue_summary:
+                rows.append(
+                    {
+                        "source": "decision_state",
+                        "record_id": int(row[0]),
+                        "text": issue_summary,
+                        "metadata": json.dumps({"repo": row[1], "table": "decision_state"}),
+                    }
+                )
+
+        if not rows:
+            session.commit()
+            return 0
+        return self.ingest_memory_rows(session, rows)
