@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from apps.conductor.services.feasibility import FeasibilityService
 from apps.conductor.services.frontier import FrontierService
+from apps.conductor.services.package_semantics import classify_package_status
 from shared.schemas.models import CandidatePlan, DecisionState, ExecutionRunResponse
 
 
@@ -35,7 +37,10 @@ class MemoryWriterService:
         feasible_unchosen: list[CandidatePlan],
         execution_result: ExecutionRunResponse,
     ) -> MemoryWriteResult:
-        chosen_written = self._write_chosen(session, repo, decision_state, chosen_candidate, execution_result)
+        semantics = classify_package_status(execution_result.status)
+        chosen_written = False
+        if semantics.canonical_memory_allowed:
+            chosen_written = self._write_chosen(session, repo, decision_state, chosen_candidate, execution_result)
         frontier_count = self._write_frontier(session, repo, chosen_candidate, feasible_unchosen)
         surprise_reasons = self.detect_surprise(execution_result)
         residual_written = False
@@ -73,7 +78,7 @@ class MemoryWriterService:
         summary_text = f"Chosen plan: {chosen_candidate.title} | status={execution_result.status}"
         session.execute(
             text("INSERT INTO chosen_memory(repo, payload, summary_text) VALUES (:repo, :payload, :summary_text)"),
-            {"repo": repo, "payload": payload, "summary_text": summary_text},
+            {"repo": repo, "payload": json.dumps(payload), "summary_text": summary_text},
         )
         session.commit()
         return True
@@ -91,7 +96,12 @@ class MemoryWriterService:
         # Frontier memory stores only feasible, non-dominated, materially distinct alternatives.
         feasible_only = [cand for cand in feasible_unchosen if self.feasibility_service.certify(cand).feasible]
         non_dominated = self.frontier_service.pareto_filter(feasible_only)
-        candidates = self._filter_materially_distinct(chosen_candidate, non_dominated)
+        candidates = [
+            cand
+            for cand in non_dominated
+            if not self.frontier_service._dominates(chosen_candidate, cand)
+        ]
+        candidates = self._filter_materially_distinct(chosen_candidate, candidates)
         candidates = candidates[:2]
 
         count = 0
@@ -108,7 +118,7 @@ class MemoryWriterService:
                 text("INSERT INTO frontier_memory(repo, payload, summary_text) VALUES (:repo, :payload, :summary_text)"),
                 {
                     "repo": repo,
-                    "payload": payload,
+                    "payload": json.dumps(payload),
                     "summary_text": f"Alternative vs chosen: {alternative.title} vs {chosen_candidate.title}",
                 },
             )
@@ -137,7 +147,7 @@ class MemoryWriterService:
             text("INSERT INTO residual_memory(repo, payload, summary_text) VALUES (:repo, :payload, :summary_text)"),
             {
                 "repo": repo,
-                "payload": payload,
+                "payload": json.dumps(payload),
                 "summary_text": f"Surprise detected for {decision_state.task_id}: {', '.join(surprise_reasons)}",
             },
         )
@@ -163,17 +173,13 @@ class MemoryWriterService:
         return reasons
 
     def _filter_materially_distinct(self, chosen: CandidatePlan, alternatives: list[CandidatePlan]) -> list[CandidatePlan]:
-        chosen_vec = self.frontier_service._feature_vector(chosen)
         unique: list[CandidatePlan] = []
         for alternative in alternatives:
-            alt_vec = self.frontier_service._feature_vector(alternative)
-            similarity = self.frontier_service._cosine(chosen_vec, alt_vec)
-            if similarity >= 0.985:
+            if self.frontier_service.is_near_duplicate(chosen, alternative, similarity_threshold=0.985):
                 continue
             duplicate = False
             for existing in unique:
-                sim_alt = self.frontier_service._cosine(alt_vec, self.frontier_service._feature_vector(existing))
-                if sim_alt >= 0.985:
+                if self.frontier_service.is_near_duplicate(alternative, existing, similarity_threshold=0.985):
                     duplicate = True
                     break
             if not duplicate:

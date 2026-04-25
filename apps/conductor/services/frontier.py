@@ -33,6 +33,8 @@ class FrontierResult:
 
 
 class FrontierService:
+    OBJECTIVE_DUPLICATE_L1_MAX = 0.05
+
     def pareto_filter(self, candidates: list[CandidatePlan]) -> list[CandidatePlan]:
         non_dominated: list[CandidatePlan] = []
         for idx, cand in enumerate(candidates):
@@ -53,7 +55,7 @@ class FrontierService:
             if not kept:
                 kept.append(candidate)
                 continue
-            if any(self._cosine(self._feature_vector(candidate), self._feature_vector(existing)) >= similarity_threshold for existing in kept):
+            if any(self.is_near_duplicate(candidate, existing, similarity_threshold=similarity_threshold) for existing in kept):
                 continue
             kept.append(candidate)
         return kept
@@ -105,6 +107,23 @@ class FrontierService:
         lhs_gt_any = any(l[key] > r[key] for key in l)
         return lhs_ge_all and lhs_gt_any
 
+    def is_near_duplicate(
+        self,
+        lhs: CandidatePlan,
+        rhs: CandidatePlan,
+        similarity_threshold: float = 0.985,
+    ) -> bool:
+        """Near-duplicate requires both geometric and objective closeness.
+
+        This prevents deduping materially different candidates that happen to
+        share macro/meso/micro structure but differ meaningfully on objective
+        vectors.
+        """
+        cosine = self._cosine(self._feature_vector(lhs), self._feature_vector(rhs))
+        if cosine < similarity_threshold:
+            return False
+        return self._objective_l1(lhs, rhs) <= self.OBJECTIVE_DUPLICATE_L1_MAX
+
     def _feature_vector(self, candidate: CandidatePlan) -> list[float]:
         macro = self._normalize([float(v) for v in candidate.macro_vec])
 
@@ -147,3 +166,9 @@ class FrontierService:
         if l_norm == 0 or r_norm == 0:
             return 0.0
         return dot / (l_norm * r_norm)
+
+    @staticmethod
+    def _objective_l1(lhs: CandidatePlan, rhs: CandidatePlan) -> float:
+        left = lhs.objective_vec.model_dump()
+        right = rhs.objective_vec.model_dump()
+        return sum(abs(left[key] - right[key]) for key in left)

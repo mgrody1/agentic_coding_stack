@@ -1,4 +1,5 @@
 from sqlalchemy import text
+import json
 
 from apps.conductor.db.models import create_session_factory
 from apps.conductor.services.execution import ExecutionService
@@ -8,6 +9,9 @@ from shared.schemas.models import CandidatePlan, DecisionState, MicroTargets, Ob
 class FakeWorkerClient:
     def __init__(self):
         self.run_command_calls = 0
+        self.last_run_command = None
+        self.files = {"src/a.py": "before", "tests/a_test.py": "before-test"}
+        self.last_reset = None
 
     def prepare_repo(self, repo, task_id, base_branch):
         return {"worktree_path": f"/tmp/{task_id}", "branch_name": f"task/{task_id}"}
@@ -26,15 +30,30 @@ class FakeWorkerClient:
 
     def run_command(self, repo, task_id, command_key, args):
         self.run_command_calls += 1
+        self.last_run_command = {"repo": repo, "task_id": task_id, "command_key": command_key, "args": args}
         return {"ok": True, "command_key": command_key, "args": args, "stdout": "repair command"}
+
+    def read_file(self, repo, task_id, path):
+        return {"content": self.files.get(path, ""), "path": path}
+
+    def write_file(self, repo, task_id, path, content):
+        self.files[path] = content
+        return {"ok": True, "path": path, "bytes_written": len(content.encode("utf-8"))}
+
+    def reset_repo(self, repo, task_id):
+        self.last_reset = {"repo": repo, "task_id": task_id}
+        return {"ok": True}
 
 
 class FakeReviewerClient:
-    def __init__(self, verdicts):
+    def __init__(self, verdicts, repair_modifications=None):
         self.verdicts = list(verdicts)
         self.calls = 0
+        self.repair_modifications = repair_modifications or [{"path": "src/a.py", "content": "after", "rationale": "fix"}]
 
     def chat(self, alias, messages, **kwargs):
+        if alias == "builder":
+            return {"choices": [{"message": {"content": {"modifications": self.repair_modifications}}}]}
         result = self.verdicts[min(self.calls, len(self.verdicts) - 1)]
         self.calls += 1
         return {"choices": [{"message": {"content": result}}]}
@@ -92,7 +111,8 @@ def test_execution_stage_transitions_success_path():
         )
         row = session.execute(text("SELECT transitions FROM execution_state WHERE job_id='job-1'")).fetchone()
 
-    stages = [entry["stage"] for entry in row[0]]
+    transitions = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    stages = [entry["stage"] for entry in transitions]
     assert stages == ["queued", "prepared", "implementing", "validating", "reviewing", "finalizing", "completed"]
     assert result["status"] == "completed"
 
@@ -131,7 +151,9 @@ def test_execution_reviewer_block_triggers_exactly_one_repair_cycle():
             selected_candidate=make_candidate(),
         )
 
-    assert worker.run_command_calls == 1
+    assert worker.run_command_calls == 0
+    assert worker.files["src/a.py"] == "after"
+    assert result["repair_result"]["state"] == "repaired_but_still_blocked"
     assert reviewer.calls == 2
     assert result["status"] == "blocked"
 

@@ -97,6 +97,38 @@ class MemoryQueryResponse(BaseModel):
     applied_overlays: list[str] = Field(default_factory=list)
 
 
+class OverlayRecord(BaseModel):
+    repo: str
+    scope: Literal["alias_local", "pair_local"]
+    name: str
+    summary: str
+    guidance: list[str] = Field(default_factory=list)
+    applies_to_tasks: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class AliasOverlayUpsertRequest(BaseModel):
+    repo: str
+    alias_name: str
+    summary: str
+    guidance: list[str] = Field(default_factory=list)
+    applies_to_tasks: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class PairOverlayUpsertRequest(BaseModel):
+    repo: str
+    pair_key: str
+    summary: str
+    guidance: list[str] = Field(default_factory=list)
+    applies_to_tasks: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class OverlayUpsertResponse(BaseModel):
+    stored: OverlayRecord
+
+
 class DecisionStateBuildRequest(BaseModel):
     repo: str
     task_id: str
@@ -163,6 +195,8 @@ class MemoryIngestResponse(BaseModel):
 
 class CandidateGenerationRequest(BaseModel):
     decision_state: DecisionState
+    alias_name: str | None = None
+    pair_key: str | None = None
 
 
 class CandidateGenerationResponse(BaseModel):
@@ -170,6 +204,7 @@ class CandidateGenerationResponse(BaseModel):
     rejected: list[dict[str, Any]] = Field(default_factory=list)
     feasible_count: int = 0
     infeasible_count: int = 0
+    active_overlays: list[str] = Field(default_factory=list)
 
 
 class FrontierBuildRequest(BaseModel):
@@ -208,6 +243,8 @@ class ExecutionRunRequest(BaseModel):
     repo: str
     task_id: str
     base_branch: str = "main"
+    idempotency_key: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
     decision_state: DecisionState
     selected_candidate: CandidatePlan
 
@@ -219,6 +256,9 @@ class ExecutionRunResponse(BaseModel):
     artifacts: dict[str, Any] = Field(default_factory=dict)
     reviewer_verdict: ReviewerVerdict
     repair_result: dict[str, Any] = Field(default_factory=dict)
+    cause_code: str | None = None
+    replayed: bool = False
+    idempotency_key: str | None = None
 
 
 class ExecutionStateResponse(BaseModel):
@@ -232,6 +272,7 @@ class ExecutionStateResponse(BaseModel):
 class ExecutionPackageRequest(BaseModel):
     job_id: str
     repo: str
+    idempotency_key: str | None = None
     decision_state: DecisionState
     chosen_candidate: CandidatePlan
     feasible_unchosen_candidates: list[CandidatePlan] = Field(default_factory=list)
@@ -255,3 +296,102 @@ class ExecutionPackageResponse(BaseModel):
     job_id: str
     draft_pr: DraftPRPayloadResponse
     memory_report: MemoryWriteReport
+    cause_code: str | None = None
+    replayed: bool = False
+    idempotency_key: str | None = None
+
+
+class TelemetryEvent(BaseModel):
+    id: int
+    job_id: str
+    route: str
+    phase: str
+    status: str
+    cause_code: str
+    replayed: bool
+    idempotency_key: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class TelemetryListResponse(BaseModel):
+    events: list[TelemetryEvent] = Field(default_factory=list)
+
+
+class CancelJobRequest(BaseModel):
+    reason: str = "operator_cancelled"
+
+
+class JobControlResponse(BaseModel):
+    job_id: str
+    cancelled: bool
+    reason: str | None = None
+    updated_at: datetime
+
+
+class ResumeExecuteRequest(BaseModel):
+    execute_request: ExecutionRunRequest
+    checkpoint_stage: str
+
+
+class RetryPackageRequest(BaseModel):
+    package_request: ExecutionPackageRequest
+    allow_duplicate_side_effects: bool = False
+    approval_token: str | None = None
+    approval_reason_code: str | None = None
+
+
+class CheckpointResponse(BaseModel):
+    job_id: str
+    checkpoints: list[str] = Field(default_factory=list)
+
+
+class TelemetrySummaryBucket(BaseModel):
+    route: str
+    phase: str
+    status: str
+    cause_code: str
+    replayed: bool
+    count: int
+
+
+class TelemetrySummaryResponse(BaseModel):
+    buckets: list[TelemetrySummaryBucket] = Field(default_factory=list)
+
+
+class InvariantCheck(BaseModel):
+    name: str
+    ok: bool
+    cause_code: str | None = None
+    details: str = ""
+
+
+class InvariantReportResponse(BaseModel):
+    job_id: str
+    ok: bool
+    checks: list[InvariantCheck] = Field(default_factory=list)
+
+
+class OperatorLedgerEntry(BaseModel):
+    id: int
+    job_id: str
+    actor_role: str
+    action: str
+    reason_code: str
+    approved: bool
+    cause_code: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class OperatorLedgerResponse(BaseModel):
+    entries: list[OperatorLedgerEntry] = Field(default_factory=list)
+
+
+class JobEscalationResponse(BaseModel):
+    job_id: str
+    failure_streak: int
+    escalated: bool
+    level: int
+    reason_code: str
+    updated_at: datetime

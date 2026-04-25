@@ -30,8 +30,11 @@ class ConductorSettings(BaseSettings):
 
     api_token: str = Field(default="replace_me")
     db_url: str = Field(default="sqlite:///./frontier.db")
+    worker_token: str = Field(default="replace_me")
     worker_m2_url: str = Field(default="http://m2studio:8720")
     worker_mbp_url: str = Field(default="http://mbp:8720")
+    approval_token: str = Field(default="approve_me")
+    escalation_failure_streak_threshold: int = Field(default=2, ge=1, le=10)
 
     omlx_mem_embed_url: str = Field(default="http://mini:8000/v1")
     omlx_mem_rerank_url: str = Field(default="http://mini:8000/v1")
