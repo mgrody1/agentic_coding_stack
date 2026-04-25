@@ -114,6 +114,81 @@ class OutcomeMemoryRecord(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
+class ExecutionIdempotencyRecord(Base):
+    __tablename__ = "execution_idempotency"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="in_progress")
+    cause_code: Mapped[str] = mapped_column(String(64), default="")
+    response_payload: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PackageIdempotencyRecord(Base):
+    __tablename__ = "package_idempotency"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="in_progress")
+    cause_code: Mapped[str] = mapped_column(String(64), default="")
+    response_payload: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class TelemetryEventRecord(Base):
+    __tablename__ = "telemetry_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), index=True)
+    route: Mapped[str] = mapped_column(String(64), index=True)
+    phase: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    cause_code: Mapped[str] = mapped_column(String(64), default="")
+    replayed: Mapped[bool] = mapped_column(Boolean, default=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), default="")
+    details: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class JobControlRecord(Base):
+    __tablename__ = "job_control"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    reason: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class OperatorActionLedgerRecord(Base):
+    __tablename__ = "operator_action_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), index=True)
+    actor_role: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    reason_code: Mapped[str] = mapped_column(String(64), index=True)
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    cause_code: Mapped[str] = mapped_column(String(64), default="")
+    details: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class JobEscalationRecord(Base):
+    __tablename__ = "job_escalation"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    failure_streak: Mapped[int] = mapped_column(Integer, default=0)
+    escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+    level: Mapped[int] = mapped_column(Integer, default=0)
+    reason_code: Mapped[str] = mapped_column(String(64), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 def create_session_factory(db_url: str):
     engine = create_engine(db_url, future=True)
     Base.metadata.create_all(engine)

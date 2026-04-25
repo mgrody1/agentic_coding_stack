@@ -45,7 +45,7 @@ class MemoryRetrievalService:
                 source=row[0],
                 record_id=int(row[1]),
                 text=row[2],
-                metadata={"fts_metadata": row[3]},
+                metadata=self._decode_metadata(row[3]),
                 score=float(-row[4]),
             )
             for row in rows
@@ -74,10 +74,26 @@ class MemoryRetrievalService:
             mapped.append(original.model_copy(update={"score": float(item["score"])}))
         return mapped
 
-    def query(self, session: Session, query: str, top_k: int) -> RetrievalBundle:
+    def query(
+        self,
+        session: Session,
+        query: str,
+        top_k: int,
+        repo: str | None = None,
+        task_id: str | None = None,
+        alias_name: str | None = None,
+        pair_key: str | None = None,
+    ) -> RetrievalBundle:
         lexical = self.lexical_search(session, query=query, top_k=top_k * 2)
+        lexical = [
+            hit
+            for hit in lexical
+            if self._is_overlay_hit_relevant(hit, repo=repo, task_id=task_id, alias_name=alias_name, pair_key=pair_key)
+        ]
         embedding = self.embedding_search(query=query, lexical_hits=lexical, top_k=top_k * 2)
         reranked = self.rerank(query=query, hits=embedding, top_k=top_k)
+        reranked = self._apply_overlay_boosts(reranked, alias_name=alias_name, pair_key=pair_key)
+        reranked.sort(key=lambda h: h.score, reverse=True)
         return RetrievalBundle(lexical=lexical, embedding=embedding, reranked=reranked)
 
     @staticmethod
@@ -138,8 +154,8 @@ class MemoryRetrievalService:
             {"repo": repo},
         ).fetchall()
         for row in decision_rows:
-            payload = row[2] or {}
-            issue_summary = payload.get("issue_summary") if isinstance(payload, dict) else ""
+            payload = self._decode_metadata(row[2])
+            issue_summary = payload.get("issue_summary")
             if issue_summary:
                 rows.append(
                     {
@@ -150,7 +166,112 @@ class MemoryRetrievalService:
                     }
                 )
 
+        alias_rows = session.execute(
+            text("SELECT id, repo, alias_name, payload FROM alias_memory_state WHERE repo = :repo"),
+            {"repo": repo},
+        ).fetchall()
+        for row in alias_rows:
+            payload = self._decode_metadata(row[3])
+            if not payload:
+                continue
+            summary = payload.get("summary") or ""
+            guidance = payload.get("guidance") or []
+            text_blob = "\n".join([summary, *[str(item) for item in guidance if str(item).strip()]]).strip()
+            if not text_blob:
+                continue
+            rows.append(
+                {
+                    "source": "alias_overlay",
+                    "record_id": int(row[0]),
+                    "text": text_blob,
+                    "metadata": json.dumps(
+                        {
+                            "repo": row[1],
+                            "table": "alias_memory_state",
+                            "alias_name": row[2],
+                            "applies_to_tasks": payload.get("applies_to_tasks", []),
+                        }
+                    ),
+                }
+            )
+
+        pair_rows = session.execute(
+            text("SELECT id, repo, pair_key, payload FROM pair_memory_state WHERE repo = :repo"),
+            {"repo": repo},
+        ).fetchall()
+        for row in pair_rows:
+            payload = self._decode_metadata(row[3])
+            if not payload:
+                continue
+            summary = payload.get("summary") or ""
+            guidance = payload.get("guidance") or []
+            text_blob = "\n".join([summary, *[str(item) for item in guidance if str(item).strip()]]).strip()
+            if not text_blob:
+                continue
+            rows.append(
+                {
+                    "source": "pair_overlay",
+                    "record_id": int(row[0]),
+                    "text": text_blob,
+                    "metadata": json.dumps(
+                        {
+                            "repo": row[1],
+                            "table": "pair_memory_state",
+                            "pair_key": row[2],
+                            "applies_to_tasks": payload.get("applies_to_tasks", []),
+                        }
+                    ),
+                }
+            )
+
         if not rows:
             session.commit()
             return 0
         return self.ingest_memory_rows(session, rows)
+
+    @staticmethod
+    def _decode_metadata(raw: str | dict | None) -> dict[str, Any]:
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                return {"raw": raw}
+        return {}
+
+    def _is_overlay_hit_relevant(
+        self,
+        hit: MemoryHit,
+        repo: str | None,
+        task_id: str | None,
+        alias_name: str | None,
+        pair_key: str | None,
+    ) -> bool:
+        if hit.source not in {"alias_overlay", "pair_overlay"}:
+            return True
+        metadata = hit.metadata
+        if repo and metadata.get("repo") and metadata.get("repo") != repo:
+            return False
+        tasks = metadata.get("applies_to_tasks", [])
+        if tasks and task_id and task_id not in set(tasks):
+            return False
+        if hit.source == "alias_overlay":
+            return bool(alias_name and metadata.get("alias_name") == alias_name)
+        if hit.source == "pair_overlay":
+            return bool(pair_key and metadata.get("pair_key") == pair_key)
+        return True
+
+    @staticmethod
+    def _apply_overlay_boosts(hits: list[MemoryHit], alias_name: str | None, pair_key: str | None) -> list[MemoryHit]:
+        boosted: list[MemoryHit] = []
+        for hit in hits:
+            score = hit.score
+            if hit.source == "alias_overlay" and alias_name:
+                score += 0.10
+            if hit.source == "pair_overlay" and pair_key:
+                score += 0.15
+            boosted.append(hit.model_copy(update={"score": score}))
+        return boosted

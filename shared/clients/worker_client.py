@@ -39,6 +39,12 @@ class WorkerClient:
     def run_command(self, repo: str, task_id: str, command_key: str, args: list[str]) -> dict[str, Any]:
         return self._post("/run/command", {"repo": repo, "task_id": task_id, "command_key": command_key, "args": args})
 
+    def read_file(self, repo: str, task_id: str, path: str) -> dict[str, Any]:
+        return self._post("/artifact/read_file", {"repo": repo, "task_id": task_id, "path": path})
+
+    def write_file(self, repo: str, task_id: str, path: str, content: str) -> dict[str, Any]:
+        return self._post("/artifact/write_file", {"repo": repo, "task_id": task_id, "path": path, "content": content})
+
     def run_lint(self, repo: str, task_id: str) -> dict[str, Any]:
         return self._post("/run/lint", {"repo": repo, "task_id": task_id})
 

@@ -97,6 +97,34 @@ def test_chosen_memory_write_occurs_when_expected_and_no_raw_transcript_persiste
     assert "prompt" not in str(payload)
 
 
+def test_chosen_memory_not_written_for_blocked_or_failed_statuses():
+    service = MemoryWriterService()
+    SessionFactory = create_session_factory("sqlite+pysqlite:///:memory:")
+
+    with SessionFactory() as session:
+        blocked_result = service.write_package(
+            session=session,
+            repo="repo",
+            decision_state=DecisionState(repo="repo", task_id="t1", issue_summary="issue"),
+            chosen_candidate=candidate("chosen-blocked"),
+            feasible_unchosen=[],
+            execution_result=execution(status="blocked", ok=False),
+        )
+        failed_result = service.write_package(
+            session=session,
+            repo="repo",
+            decision_state=DecisionState(repo="repo", task_id="t2", issue_summary="issue"),
+            chosen_candidate=candidate("chosen-failed"),
+            feasible_unchosen=[],
+            execution_result=execution(status="failed", ok=False),
+        )
+        chosen_rows = session.execute(text("SELECT COUNT(*) FROM chosen_memory")).scalar_one()
+
+    assert blocked_result.chosen_written is False
+    assert failed_result.chosen_written is False
+    assert chosen_rows == 0
+
+
 def test_frontier_memory_gating_rejects_duplicate_or_dominated_alternatives():
     service = MemoryWriterService()
     SessionFactory = create_session_factory("sqlite+pysqlite:///:memory:")
@@ -135,6 +163,45 @@ def test_frontier_memory_gating_rejects_duplicate_or_dominated_alternatives():
         )
 
     assert result.frontier_written == 0
+
+
+def test_frontier_memory_rejects_alternative_dominated_by_chosen():
+    service = MemoryWriterService()
+    SessionFactory = create_session_factory("sqlite+pysqlite:///:memory:")
+    chosen = candidate(
+        "chosen",
+        objective={
+            "correctness_confidence": 0.95,
+            "reversibility": 0.95,
+            "locality": 0.95,
+            "maintainability": 0.95,
+            "delivery_speed": 0.95,
+        },
+    )
+    dominated_by_chosen = candidate(
+        "dominated-by-chosen",
+        objective={
+            "correctness_confidence": 0.70,
+            "reversibility": 0.70,
+            "locality": 0.70,
+            "maintainability": 0.70,
+            "delivery_speed": 0.70,
+        },
+    )
+
+    with SessionFactory() as session:
+        result = service.write_package(
+            session=session,
+            repo="repo",
+            decision_state=DecisionState(repo="repo", task_id="t1", issue_summary="issue"),
+            chosen_candidate=chosen,
+            feasible_unchosen=[dominated_by_chosen],
+            execution_result=execution(),
+        )
+        frontier_rows = session.execute(text("SELECT COUNT(*) FROM frontier_memory")).scalar_one()
+
+    assert result.frontier_written == 0
+    assert frontier_rows == 0
 
 
 def test_residual_not_written_on_ordinary_success():

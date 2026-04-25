@@ -4,16 +4,53 @@ Local-first multi-Mac orchestration scaffold built milestone-by-milestone.
 
 ## Current implementation status
 
-Implemented and stabilized:
+Implemented orchestration shape:
 - **Milestone 1**: shared schemas/config, conductor and worker FastAPI skeletons, SQLite models/bootstrap, oMLX/worker wrappers, health endpoints.
 - **Milestone 2**: decision-state assembly and retrieval pipeline (SQLite FTS lexical + oMLX embedding + oMLX rerank).
 - **Milestone 3**: fixed-role candidate generation (6 builder roles), schema validation, feasibility certificates and gating.
 - **Milestone 4**: frontier pruning (Pareto non-dominated, dedupe, Gram similarity, medoids `k<=3`), arbiter decision contract, synthesis recertification.
 - **Milestone 5**: execution/review loop for one selected candidate with explicit stage machine, one repair cycle max, and structured artifact capture.
-- **Milestone 6**: draft PR payload composition and deterministic memory writes for chosen/frontier/residual records with rule-based surprise detection.
+- **Milestone 6**: draft PR payload composition and deterministic memory writes with explicit package semantics:
+  - `completed` execution: draft payload + canonical memory persistence (`chosen_memory`, `frontier_memory`, `residual_memory` as applicable).
+  - `blocked` / `failed` execution: draft payload only (no canonical `chosen_memory` persistence).
+  - in-progress execution statuses: package request is rejected.
+
+Implemented in Milestone 7A:
+- localized alias-local and pair-local overlay state records.
+- overlay-aware retrieval filtering/ranking by active alias/pair and repo/task context.
+- overlay-aware candidate prompt assembly with explicit precedence:
+  - global constraints > global memory > alias-local overlay > pair-local overlay.
+
+Implemented in Milestone 7B:
+- bounded one-shot conductor-driven repair loop using worker-safe read/write/reset primitives.
+- repair result states: `repaired_and_passed`, `repaired_but_still_blocked`, `repair_failed`.
+- explicit repair diff artifact requirement and deterministic terminal status on repair failure.
+
+Implemented in Milestone 8:
+- explicit idempotency/replay handling for execute/package routes.
+- structured low-cardinality telemetry events with stable cause codes.
+- JSON round-trip hardening for persisted execution/package/overlay payloads.
+- operator-facing diagnostics for replayed/blocked/failed execution and package outcomes.
 
 Not implemented yet:
-- **Milestone 7+** localized alias/pair overlays and overlay-aware retrieval/prompting.
+- **Milestone 9+** richer autonomous planning controls and extended orchestration hardening.
+
+Implemented in Milestone 9:
+- bounded operator controls for cancel, retry, and resume-from-checkpoint.
+- explicit separation of replay vs retry vs resume semantics in API behavior.
+- telemetry summary endpoint with low-cardinality grouped buckets.
+- invariant report endpoint for execution/package/memory/telemetry consistency checks.
+
+## Worker realism boundary (current)
+
+- Worker endpoints are intentionally policy-free execution primitives (repo/file/command/git actions only).
+- Repair is conductor-driven and bounded to exactly one real modification attempt using worker file primitives. Worker remains policy-free.
+- This repository therefore demonstrates orchestration contracts and state transitions, but not a production-grade self-healing implementation path.
+
+## Remaining blockers before realistic end-to-end loop
+
+- PR flow remains draft-payload composition only; no live provider-side PR mutation/orchestration.
+- Milestone 10 should harden policy/governance controls around operator actions and long-lived workflows.
 
 ## Architecture boundaries
 

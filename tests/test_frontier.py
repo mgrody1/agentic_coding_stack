@@ -40,6 +40,20 @@ def test_near_duplicate_candidate_deduplication():
     assert len(deduped) == 2
 
 
+def test_dedupe_keeps_materially_distinct_objective_profile_even_if_structurally_similar():
+    service = FrontierService()
+    baseline = make_candidate("baseline", {"correctness_confidence": 0.9, "reversibility": 0.9, "locality": 0.9, "maintainability": 0.9, "delivery_speed": 0.9})
+    structurally_similar_but_lower_objective = make_candidate(
+        "structurally-similar",
+        {"correctness_confidence": 0.4, "reversibility": 0.4, "locality": 0.4, "maintainability": 0.4, "delivery_speed": 0.4},
+        files=["src/baseline.py"],
+    )
+
+    deduped = service.dedupe([baseline, structurally_similar_but_lower_objective], similarity_threshold=0.98)
+
+    assert len(deduped) == 2
+
+
 def test_medoid_count_is_capped_to_three():
     service = FrontierService()
     candidates = [
