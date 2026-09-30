@@ -1,0 +1,65 @@
+# Codex MCP registration for gpt-as-subagent.
+# Prefer `bash adapters/codex/install.sh` for automatic registration.
+
+[mcp_servers.gpt] # managed-by: gpt-as-subagent
+command = "/absolute/path/to/.gpt-mcp/codex-venvs/generation.XXXXXX/bin/gpt-mcp"
+enabled = true
+enabled_tools = [
+  "ping",
+  "delegate_to_gpt",
+  "delegate_to_gpt_readonly",
+  "start_gpt",
+  "start_gpt_readonly",
+  "get_gpt_status",
+  "send_gpt_message",
+  "cancel_gpt",
+  "get_gpt_result",
+  "get_gpt_recovery",
+  "acknowledge_gpt_mutations",
+]
+startup_timeout_sec = 20
+tool_timeout_sec = 18060
+default_tools_approval_mode = "writes"
+env_vars = [
+  "GPT_API_KEY",
+  "GPT_WORKSPACE",
+  "GPT_MODE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+]
+
+# Result retrieval performs local one-shot usage bookkeeping, so it is honestly
+# annotated as a write while remaining safe to approve without a prompt.
+[mcp_servers.gpt.tools.get_gpt_result]
+approval_mode = "approve"
+
+[mcp_servers.gpt.tools.get_gpt_recovery]
+approval_mode = "approve"
+
+[mcp_servers.gpt.tools.acknowledge_gpt_mutations]
+approval_mode = "approve"
+
+# The server exposes:
+# - delegate_to_gpt(task, context)          # coding, synchronous
+# - delegate_to_gpt_readonly(task, context) # read-only, synchronous
+# - start_gpt(task, context)                # coding, returns job_id
+# - start_gpt_readonly(task, context)       # read-only, returns job_id
+# - send_gpt_message(job_id, message)       # steer running job
+# - get_gpt_status(job_id)
+# - cancel_gpt(job_id)
+# - get_gpt_result(job_id)
+# - get_gpt_recovery()
+# - acknowledge_gpt_mutations(transaction_ids)
+# - ping()
+#
+# GPT API credentials/config live in ~/.gpt-mcp/config.json rather
+# than this Codex config file.

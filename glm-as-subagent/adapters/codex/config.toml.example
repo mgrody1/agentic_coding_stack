@@ -1,0 +1,65 @@
+# Codex MCP registration for glm-as-subagent.
+# Prefer `bash adapters/codex/install.sh` for automatic registration.
+
+[mcp_servers.glm] # managed-by: glm-as-subagent
+command = "/absolute/path/to/.glm-mcp/codex-venvs/generation.XXXXXX/bin/glm-mcp"
+enabled = true
+enabled_tools = [
+  "ping",
+  "delegate_to_glm",
+  "delegate_to_glm_readonly",
+  "start_glm",
+  "start_glm_readonly",
+  "get_glm_status",
+  "send_glm_message",
+  "cancel_glm",
+  "get_glm_result",
+  "get_glm_recovery",
+  "acknowledge_glm_mutations",
+]
+startup_timeout_sec = 20
+tool_timeout_sec = 18060
+default_tools_approval_mode = "writes"
+env_vars = [
+  "GLM_API_KEY",
+  "GLM_WORKSPACE",
+  "GLM_MODE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+]
+
+# Result retrieval performs local one-shot usage bookkeeping, so it is honestly
+# annotated as a write while remaining safe to approve without a prompt.
+[mcp_servers.glm.tools.get_glm_result]
+approval_mode = "approve"
+
+[mcp_servers.glm.tools.get_glm_recovery]
+approval_mode = "approve"
+
+[mcp_servers.glm.tools.acknowledge_glm_mutations]
+approval_mode = "approve"
+
+# The server exposes:
+# - delegate_to_glm(task, context)          # coding, synchronous
+# - delegate_to_glm_readonly(task, context) # read-only, synchronous
+# - start_glm(task, context)                # coding, returns job_id
+# - start_glm_readonly(task, context)       # read-only, returns job_id
+# - send_glm_message(job_id, message)       # steer running job
+# - get_glm_status(job_id)
+# - cancel_glm(job_id)
+# - get_glm_result(job_id)
+# - get_glm_recovery()
+# - acknowledge_glm_mutations(transaction_ids)
+# - ping()
+#
+# GLM API credentials/config live in ~/.glm-mcp/config.json rather
+# than this Codex config file.
